@@ -1,0 +1,40 @@
+*
+{
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body
+{
+    overflow: hidden;
+}
+
+.webgl
+{
+    position: fixed;
+    top: 0;
+    left: 0;
+    outline: none;
+}
+
+.content-container {
+    background: linear-gradient(90deg, #FAF9F8, transparent 50%, transparent);
+    /* background: linear-gradient(45deg, black, transparent); */
+    position: fixed;
+    inset: 0;
+    outline: none;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.nav-buttons {
+    z-index: 2;
+    position: fixed;
+    bottom: 80px;
+    left: 160px;
+}
+
+.nav-prev, .nav-next {
+    cursor: pointer;
+}
