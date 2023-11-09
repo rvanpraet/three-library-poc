@@ -277,7 +277,6 @@ directionalLight.shadow.camera.left = - 7
 directionalLight.shadow.camera.top = 7
 directionalLight.shadow.camera.right = 7
 directionalLight.shadow.camera.bottom = - 7
-// directionalLight.position.set(-5, 5, 5)
 directionalLight.position.set(-10, 10, 10)
 scene.add(directionalLight)
 // scene.add( directionalHelper )
@@ -305,36 +304,18 @@ window.addEventListener('resize', () =>
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 })
 
-/**
- * User scroll and movement behaviour
- */
-
-// Keep track of mouse x and y coordinates
-function onDocumentMouseMove(event) {
-    event.preventDefault();
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-}
-document.addEventListener('mousemove', onDocumentMouseMove, false);
-
-
 // Define the threshold for scroll intensity
 // Initialize the variable to store the previous scroll position
 const threshold = 25;
-let previousScrollY = 0;
+let smoothedDeltaY = 0;
+const cameraSpeed = 0.01
 
 // Event listener for scroll
 window.addEventListener('wheel', (event) => {
-    const scrollDistance = previousScrollY + event.deltaY;
+    // smoothedDeltaY += (event.deltaY - smoothedDeltaY) * cameraSpeed;
+    const x = camera.position.x + event.deltaY * cameraSpeed
 
-    if (Math.abs(scrollDistance) >= threshold) {
-        // Your custom logic here
-        // Update the position, rotation, or any other property of your 3D objects
-        if (scrollDistance > 0) nextBtn.click()
-        if (scrollDistance < 0) prevBtn.click()
-
-        previousScrollY = scrollY;
-    }
+    gsap.to(camera.position, { x, ...animationProps })
 });
 
 /**
@@ -386,15 +367,15 @@ const tick = () =>
     previousTime = elapsedTime
 
     // Cursor moving shelf position
-    if (!buttonAnimating) {
-        if (mouse.x > 0.25 && mouse.y < -0.25) {
-            camera.position.x -= (mouse.y - mouse.x) * 0.05
-        }
-        // Top left case
-        if (mouse.x < -0.25 && mouse.y > 0.1) {
-            camera.position.x += (mouse.x - mouse.y) * 0.075
-        }
-    }
+    // if (!buttonAnimating) {
+    //     if (mouse.x > 0.25 && mouse.y < -0.25) {
+    //         camera.position.x -= (mouse.y - mouse.x) * 0.05
+    //     }
+    //     // Top left case
+    //     if (mouse.x < -0.25 && mouse.y > 0.1) {
+    //         camera.position.x += (mouse.x - mouse.y) * 0.075
+    //     }
+    // }
 
 
     // Update IM
