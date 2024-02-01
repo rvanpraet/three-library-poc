@@ -1,425 +1,513 @@
-import gsap from 'gsap';
-import * as dat from 'lil-gui';
-import * as THREE from 'three';
-import { InteractionManager } from 'three.interactive';
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-// import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { mockBooksConfig, transitionColor } from './utils';
+import gsap from "gsap";
+import * as dat from "lil-gui";
+import * as THREE from "three";
+import { InteractionManager } from "three.interactive";
+import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
+import { mockBooksConfig, transitionColor } from "./utils";
 
 /**
  * Base constants
  */
 
 // Duration
-const COLOR_DURATION = .35
-const ANIMATION_DURATION = .75;
+const COLOR_DURATION = 0.35;
+const ANIMATION_DURATION = 0.75;
 
 const animationProps = {
-    duration: ANIMATION_DURATION,
-    ease: 'ease-in-out',
-}
+  duration: ANIMATION_DURATION,
+  ease: "ease-in-out",
+};
 
 // Colors
-const COLOR_AMERICANA = 0xFAF9F8
-const COLOR_AMERICANA_PINK_LIGHT = 0xFFCCCB
-const COLOR_AMERICANA_DARK = 0xEAF9F8
+const COLOR_AMERICANA = 0xfaf9f8;
+const COLOR_AMERICANA_PINK_LIGHT = 0xffcccb;
+const COLOR_AMERICANA_DARK = 0xeaf9f8;
 
 // Offsets
-const BOOK_GROUP_OFFSET = -15
+const BOOK_GROUP_OFFSET = -15;
+
+const MAX_RANGE = 50;
+const MIN_RANGE = MAX_RANGE / 2;
 
 /**
  * Base
  */
 
-let buttonAnimating = false
-let currentNav = 0
-let activeBook = null
+let isPageTransitioning = false; // To prevent anything from happening while page is transitioning
+let isShelfTransitioning = false; // To prevent anything from happening while shelf is transitioning
+let currentNav = 0; // Current active book shelf
+let activeBook = null; // Current active book
 let booksGroup = new THREE.Group();
-const mouse = new THREE.Vector2()
 
 // Debug
-const gui = new dat.GUI()
-const axesHelper = new THREE.AxesHelper()
+const config = {
+  visit: onVisitClick,
+  numParticles: 30000,
+};
+const gui = new dat.GUI();
+const axesHelper = new THREE.AxesHelper();
+gui.add(config, "visit");
 
 // Canvas
-const canvas = document.querySelector('canvas.webgl')
+const canvas = document.querySelector("canvas.webgl");
 
 // Scene
-const scene = new THREE.Scene()
+const scene = new THREE.Scene();
 
-scene.add(axesHelper)
+scene.add(axesHelper);
 
 /**
  * Loading Manager
  */
 const onLoad = () => {
-    // gui.add( object.children[0].material, 'shininess', 0, 100 );
-    // gui.add( object.children[0].material, 'roughness', 0, 1 );
+  // gui.add( object.children[0].material, 'shininess', 0, 100 );
+  // gui.add( object.children[0].material, 'roughness', 0, 1 );
 
-    // booksGroup.position.z = 2
-    booksGroup.position.x = BOOK_GROUP_OFFSET
+  // booksGroup.position.z = 2
+  booksGroup.position.x = BOOK_GROUP_OFFSET;
 
-    scene.add( booksGroup );
-    console.log('manager onload', scene)
-}
-const manager = new THREE.LoadingManager( onLoad )
+  scene.add(booksGroup);
+  console.log("manager onload", scene);
+};
+const manager = new THREE.LoadingManager(onLoad);
 
 /**
  * Texture loader
  */
-const textureLoader = new THREE.TextureLoader( manager );
-const texture = textureLoader.load( 'textures/OldBook001_tex.png' );
-const colorTexture = textureLoader.load( 'textures/white_oak/color.png' );
-const paintDisplace = textureLoader.load( 'textures/white_oak/displacement.png' );
-const paintNormal = textureLoader.load( 'textures/white_oak/normal.png' );
-const paintMetalness = textureLoader.load( 'textures/white_oak/metalness.png' );
-const paintRoughness = textureLoader.load( 'textures/white_oak/roughness.png' );
-const paintAO = textureLoader.load( 'textures/white_oak/ao.png' );
-
-// colorTexture.wrapS = THREE.MirroredRepeatWrapping
-// colorTexture.wrapT = THREE.MirroredRepeatWrapping
+const textureLoader = new THREE.TextureLoader(manager);
+const texture = textureLoader.load("textures/OldBook001_tex.png"); // Can be used to replace the texture on each book
 
 /**
  * OBJ Loader
  */
-const objLoader = new OBJLoader( manager )
-// objLoader.load(
-//     'models/books/book_02.obj',
-//     (object) => {
-//         object.traverse(( child ) => {
-//             if ( child.isMesh ) {
-//                 // child.material = new THREE.MeshStandardMaterial()
-//                 // child.material.color = new THREE.Color(0xffffff)
-//                 // child.material.map = texture;
-//                 // child.material.shininess = 0;
-//                 // child.material.roughness = 1;
-//             }
-//         } );
-//         object.position.set(0, 0, 0)
+const objLoader = new OBJLoader(manager);
 
-//         object.castShadow = true
-//         object.rotation.y = Math.PI * 0.5
-
-//         booksGroup.add( object )
-//     }
-// )
-
-// Slice book data into multiple arrays
-const entriesPerArray = 80;
-const twoDimArray = [];
+/**
+ * Creating the shelves
+ *
+ * To create the shelves, we need to create subarrays of the original data array
+ */
+const booksPerShelf = 80;
+const bookShelves = [];
 
 // Loop through the original array and create subarrays of the specified size
-for (let i = 0; i < mockBooksConfig.length; i += entriesPerArray) {
-    const subarray = mockBooksConfig.slice(i, i + entriesPerArray);
-    twoDimArray.push(subarray);
+for (let i = 0; i < mockBooksConfig.length; i += booksPerShelf) {
+  const subarray = mockBooksConfig.slice(i, i + booksPerShelf);
+  bookShelves.push(subarray);
 }
 
-// Iterate through
-twoDimArray.forEach((subarray, index) => {
-    const group = new THREE.Group()
-    const gap = 0.02
-    let currentX = 0
+// Iterate through the bookShelves array and create the shelves
+bookShelves.forEach((bookShelf, index) => {
+  const shelfGroup = new THREE.Group();
+  const gap = 0.02; // The gap between each book
+  let currentX = 0; // The current x position of the book, this is where the left bound of the next book will be placed
 
-    subarray.forEach((bookConfig, index) => {
-        objLoader.load(
-            'models/books/book_1.obj',
-            (object) => {
-                object.traverse(( child ) => {
-                    if ( child.isMesh ) {
-                        child.material = new THREE.MeshStandardMaterial()
-                        child.material.color = new THREE.Color(COLOR_AMERICANA)
-                        // child.material.map = texture;
-                        // child.material.shininess = 0;
-                        // child.material.roughness = 1;
-                    }
-                } );
+  // Iterate through the bookShelf array and create the books based on their given configuration
+  bookShelf.forEach((bookConfig, index) => {
+    // Load the book model -- This is currently a placeholder model
+    objLoader.load("models/books/book_1.obj", (object) => {
+      object.traverse((child) => {
+        if (child.isMesh) {
+          child.material = new THREE.MeshStandardMaterial({
+            transparent: true,
+          });
+          child.material.color = new THREE.Color(COLOR_AMERICANA);
 
-                // Rotate book in the right direction
-                object.castShadow = true
-                object.rotation.y = Math.PI * 0.5
+          // // Uncomment this to use the mock texture
+          // child.material.map = texture;
+          // child.material.shininess = 0;
+          // child.material.roughness = 1;
+        }
+      });
 
-                const mesh = object.children[0]
+      // Rotate book in the right direction
+      object.castShadow = true;
+      object.rotation.y = Math.PI * 0.5;
 
-                // Scale and position according to config
-                object.scale.z = bookConfig.scale.z
-                object.scale.y = bookConfig.scale.y
-                object.position.x = currentX
+      // The mesh is tucked away in the children array of the object, retrieve it
+      const mesh = object.children[0];
 
-                // object.scale.set( bookConfig.scale.x * 0.1, bookConfig.scale.y * 0.1, object.scale.z * 0.1)
+      // Scale and position according to config
+      object.scale.z = bookConfig.scale.z;
+      object.scale.y = bookConfig.scale.y;
+      object.position.x = currentX;
 
-                const bbox = new THREE.Box3().setFromObject(object);
-                const size = new THREE.Vector3();
-                bbox.getSize(size);
+      // Calculate the size of the book from it's bounding box
+      const bbox = new THREE.Box3().setFromObject(object);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
 
-                currentX += (size.x + gap)
+      // Calculate the position of the next book by adding the x-size of the current book and the gap
+      currentX += size.x + gap;
 
-                // Add interaction effect
-                interactionManager.add( object )
+      /**
+       * Book interaction
+       */
+      interactionManager.add(object);
 
-                object.addEventListener('mouseover', (event) => {
-                    if (object.parent.userData.index !== currentNav) return // Ignore mouseover if book is not in active shelf
+      // Mouse over
+      object.addEventListener("mouseover", (event) => {
+        // Ignore mouseover if book is not in active shelf
+        if (object.parent.userData.index !== currentNav) return;
 
-                    document.body.style.cursor = 'pointer'
+        document.body.style.cursor = "pointer";
 
-                    // Spotlight effect
-                    gsap.to(bookSpot.position, { x: object.position.x + BOOK_GROUP_OFFSET, duration: ANIMATION_DURATION })
+        // Spotlight effect
+        gsap.to(bookSpot.position, {
+          x: object.position.x + BOOK_GROUP_OFFSET,
+          duration: ANIMATION_DURATION,
+        });
 
-                    // Color hover
-                    transitionColor(mesh, COLOR_AMERICANA_PINK_LIGHT, COLOR_DURATION)
-                });
+        // Color hover
+        transitionColor(mesh, COLOR_AMERICANA_PINK_LIGHT, COLOR_DURATION);
+      });
 
-                object.addEventListener('mouseout', (event) => {
-                    if (object.parent.userData.index !== currentNav || object === activeBook) return // Ignore mouseout if book is not in active shelf
-
-                    document.body.style.cursor = 'default';
-
-                    // // Color hovering
-                    transitionColor(mesh, COLOR_AMERICANA, COLOR_DURATION)
-                });
-
-                object.addEventListener('click', (e) => {
-                    if (object.parent.userData.index !== currentNav) return // Ignore mouse click event if book is not in active shelf
-
-                    e.stopPropagation();
-
-                    const x = object.position.x + 3 + BOOK_GROUP_OFFSET
-                    // const y = object.position.y + 4
-                    // const z = object.position.z + 8
-
-                    // Reset previous rotation effect
-                    if (activeBook) {
-                        // Rotation effect
-                        transitionColor(activeBook.children[0], COLOR_AMERICANA, COLOR_DURATION)
-                        gsap.to(activeBook.rotation, { x: 0, duration: ANIMATION_DURATION })
-                        gsap.to(activeBook.position, { y: 0, z: 0, duration: ANIMATION_DURATION })
-                    }
-
-                    if (activeBook === object) {
-                        activeBook = null
-                    } else {
-                        // Rotation effect
-                        gsap.to(object.rotation, { x: Math.PI * 0.1, duration: ANIMATION_DURATION })
-                        gsap.to(object.position, { y: 0.5, z: 0.5, duration: ANIMATION_DURATION })
-                        activeBook = object
-                    }
-
-                    gsap.to(camera.position, { x, duration: ANIMATION_DURATION })
-                })
-
-                // Add to booksheft group
-                group.add( object );
-            }
+      // Mouse out
+      object.addEventListener("mouseout", (event) => {
+        // Ignore mouseout if book is not in active shelf
+        if (
+          object.parent.userData.index !== currentNav ||
+          object === activeBook
         )
+          return;
+
+        document.body.style.cursor = "default";
+
+        transitionColor(mesh, COLOR_AMERICANA, COLOR_DURATION);
+      });
+
+      object.addEventListener("click", (e) => {
+        // Ignore mouse click event if book is not in active shelf
+        if (object.parent.userData.index !== currentNav) return;
+
+        e.stopPropagation(); // Stops raycaster clicks after first clicked mesh
+
+        // Reset previous active book if there is one
+        if (activeBook) {
+          // Rotation effect
+          transitionColor(
+            activeBook.children[0],
+            COLOR_AMERICANA,
+            COLOR_DURATION
+          );
+          gsap.to(activeBook.rotation, { x: 0, duration: ANIMATION_DURATION });
+          gsap.to(activeBook.position, {
+            y: 0,
+            z: 0,
+            duration: ANIMATION_DURATION,
+          });
+        }
+
+        // If clicking on the active book, no more book is active0
+        if (activeBook === object) {
+          activeBook = null;
+        }
+
+        // Clicking on an active book sets it to active state
+        else {
+          // Rotation effect
+          gsap.to(object.rotation, {
+            x: Math.PI * 0.1,
+            duration: ANIMATION_DURATION,
+          });
+          gsap.to(object.position, {
+            y: 0.5,
+            z: 0.5,
+            duration: ANIMATION_DURATION,
+          });
+
+          activeBook = object;
+        }
+
+        // Update camera position to focus the active book
+        const xCam = object.position.x + 3 + BOOK_GROUP_OFFSET;
+        gsap.to(camera.position, { x: xCam, duration: ANIMATION_DURATION });
+      });
+
+      // Add metadata
+      object.userData.type = "bookModel";
+
+      // Add to booksheft group
+      shelfGroup.add(object);
+    });
+  });
+
+  // Create shelf
+  const shelf = new THREE.Mesh(
+    new THREE.BoxGeometry(37.5, 1.6, 0.5),
+    new THREE.MeshStandardMaterial({
+      color: COLOR_AMERICANA,
+      side: THREE.DoubleSide,
     })
+  );
+  shelf.receiveShadow = true;
+  shelf.position.x = 16.75;
+  shelf.position.y = -0.251;
+  shelf.position.z = -0.1;
+  shelf.rotation.x = -Math.PI * 0.5;
 
-    // Shelf
-    const shelf = new THREE.Mesh(
-        new THREE.BoxGeometry(37.5, 1.6, 0.5),
-        new THREE.MeshStandardMaterial({
-            color: COLOR_AMERICANA,
+  // // Add shelf to shelf group
+  // shelfGroup.add(shelf);
 
-            // map: colorTexture,
-            // aoMap: paintAO,
-            // aoMapIntensity: 1,
-            // normalMap: paintNormal,
-            // // normalScale: 1,
-            // metalnessMap: paintMetalness,
-            // roughnessMap: paintRoughness,
+  shelfGroup.position.z = index * -8;
+  shelfGroup.userData.index = index;
 
-            metalness: 0,
-            roughness: 1,
-            side: THREE.DoubleSide
-        })
-    )
-    shelf.receiveShadow = true
-    shelf.position.x = 16.75
-    shelf.position.y = -0.251
-    shelf.position.z = -.1
-    shelf.rotation.x = - Math.PI * 0.5
-
-    // group.add(shelf)
-    group.position.z = index * -8
-    group.userData.index = index
-
-    booksGroup.add( group )
-})
+  booksGroup.add(shelfGroup);
+});
 
 /**
  * Background
  */
-// scene.background = new THREE.Color(0x000000);
-// scene.fog = new THREE.Fog( 0x000000, 5, 15 );
-
 scene.background = new THREE.Color(COLOR_AMERICANA);
-scene.fog = new THREE.Fog( COLOR_AMERICANA, 2, 15 );
+scene.fog = new THREE.Fog(COLOR_AMERICANA, 3, 10);
 
 /**
  * Lights
  */
-const ambientLight = new THREE.AmbientLight(COLOR_AMERICANA, 0.6)
-scene.add(ambientLight)
+const ambientLight = new THREE.AmbientLight(COLOR_AMERICANA, 0.6);
+scene.add(ambientLight);
 
 // PointLight
-const bookSpot = new THREE.PointLight(COLOR_AMERICANA_PINK_LIGHT, 0.6, 6, 2)
-const bookSpotHelper = new THREE.PointLightHelper( bookSpot )
-bookSpot.position.set(0, 2, 6)
-bookSpot.rotation.x = Math.PI / 2
-scene.add( bookSpot )
+const bookSpot = new THREE.PointLight(COLOR_AMERICANA_PINK_LIGHT, 0.6, 6, 2);
+bookSpot.position.set(0, 2, 6);
+bookSpot.rotation.x = Math.PI / 2;
+scene.add(bookSpot);
+
+// // Bookspot helper, uncomment to show the helper
+// const bookSpotHelper = new THREE.PointLightHelper(bookSpot);
 // scene.add( bookSpotHelper )
 
 // Directional light
-const directionalLight = new THREE.DirectionalLight(COLOR_AMERICANA_DARK, 0.35)
-const directionalHelper = new THREE.DirectionalLightHelper( directionalLight )
-directionalLight.castShadow = true
-directionalLight.shadow.mapSize.set(1024, 1024)
-directionalLight.shadow.camera.far = 15
-directionalLight.shadow.camera.left = - 7
-directionalLight.shadow.camera.top = 7
-directionalLight.shadow.camera.right = 7
-directionalLight.shadow.camera.bottom = - 7
-directionalLight.position.set(-10, 10, 10)
-scene.add(directionalLight)
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.25);
+const directionalHelper = new THREE.DirectionalLightHelper(directionalLight);
+directionalLight.castShadow = true;
+directionalLight.shadow.mapSize.set(1024, 1024);
+directionalLight.shadow.camera.far = 15;
+directionalLight.shadow.camera.left = -7;
+directionalLight.shadow.camera.top = 7;
+directionalLight.shadow.camera.right = 7;
+directionalLight.shadow.camera.bottom = -7;
+directionalLight.position.set(-10, 10, 10);
+scene.add(directionalLight);
 // scene.add( directionalHelper )
 
 /**
  * Sizes
  */
 const sizes = {
-    width: window.innerWidth,
-    height: window.innerHeight
-}
+  width: window.innerWidth,
+  height: window.innerHeight,
+};
 
-window.addEventListener('resize', () =>
-{
-    // Update sizes
-    sizes.width = window.innerWidth
-    sizes.height = window.innerHeight
+window.addEventListener("resize", () => {
+  // Update sizes
+  sizes.width = window.innerWidth;
+  sizes.height = window.innerHeight;
 
-    // Update camera
-    camera.aspect = sizes.width / sizes.height
-    camera.updateProjectionMatrix()
+  // Update camera
+  camera.aspect = sizes.width / sizes.height;
+  camera.updateProjectionMatrix();
 
-    // Update renderer
-    renderer.setSize(sizes.width, sizes.height)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-})
+  // Update renderer
+  renderer.setSize(sizes.width, sizes.height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+});
 
-// Define the threshold for scroll intensity
-// Initialize the variable to store the previous scroll position
-const threshold = 25;
-let smoothedDeltaY = 0;
-const cameraSpeed = 0.01
+/**
+ * Scrolling behavior
+ */
+
+// Scroll speed
+const cameraSpeed = 0.01;
 
 // Event listener for scroll
-window.addEventListener('wheel', (event) => {
-    // smoothedDeltaY += (event.deltaY - smoothedDeltaY) * cameraSpeed;
-    const x = camera.position.x + event.deltaY * cameraSpeed
+window.addEventListener("wheel", (event) => {
+  const x = camera.position.x + event.deltaY * cameraSpeed;
 
-    gsap.to(camera.position, { x, ...animationProps })
+  gsap.to(camera.position, { x, ...animationProps });
 });
 
 /**
  * Camera
  */
 // Base camera
-const camera = new THREE.PerspectiveCamera(60, sizes.width / sizes.height, 0.1, 100)
-const cameraTarget = new THREE.Object3D()
-camera.position.set(3, 4, 6)
-cameraTarget.position.set(0, 1, 0)
-camera.lookAt(cameraTarget.position)
-scene.add(camera)
-
-// Controls
-// const controls = new OrbitControls(camera, canvas)
-// controls.target.set(0, 0.75, 0)
-// controls.enableDamping = true
+const camera = new THREE.PerspectiveCamera(
+  60,
+  sizes.width / sizes.height,
+  0.1,
+  100
+);
+const cameraTarget = new THREE.Object3D();
+camera.position.set(3, 4, 6);
+cameraTarget.position.set(0, 1, 0); // Heighten the look at position to avoid looking at the bottom of the books
+camera.lookAt(cameraTarget.position);
+scene.add(camera);
 
 /**
  * Renderer
  */
 const renderer = new THREE.WebGLRenderer({
-    canvas: canvas
-})
-renderer.shadowMap.enabled = true
-renderer.shadowMap.type = THREE.PCFSoftShadowMap
-renderer.setSize(sizes.width, sizes.height)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  canvas: canvas,
+});
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setSize(sizes.width, sizes.height);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 /**
  * Interaction Manager
  */
 const interactionManager = new InteractionManager(
-    renderer,
-    camera,
-    renderer.domElement
-  );
+  renderer,
+  camera,
+  renderer.domElement
+);
 
 /**
  * Animate
  */
-const clock = new THREE.Clock()
-let previousTime = 0
+const clock = new THREE.Clock();
+let previousTime = 0;
 
-const tick = () =>
-{
-    const elapsedTime = clock.getElapsedTime()
-    const deltaTime = elapsedTime - previousTime
-    previousTime = elapsedTime
+const tick = () => {
+  const elapsedTime = clock.getElapsedTime();
+  const deltaTime = elapsedTime - previousTime;
+  previousTime = elapsedTime;
 
-    // Cursor moving shelf position
-    // if (!buttonAnimating) {
-    //     if (mouse.x > 0.25 && mouse.y < -0.25) {
-    //         camera.position.x -= (mouse.y - mouse.x) * 0.05
-    //     }
-    //     // Top left case
-    //     if (mouse.x < -0.25 && mouse.y > 0.1) {
-    //         camera.position.x += (mouse.x - mouse.y) * 0.075
-    //     }
-    // }
+  // Update IM
+  interactionManager.update();
 
+  // Render
+  renderer.render(scene, camera);
 
-    // Update IM
-    interactionManager.update();
+  // Call tick again on the next frame
+  window.requestAnimationFrame(tick);
+};
 
-    // Update controls
-    // controls.update()
+tick();
 
-    // Render
-    renderer.render(scene, camera)
+/**
+ * Button event listeners
+ */
 
-    // Call tick again on the next frame
-    window.requestAnimationFrame(tick)
-}
-
-tick()
-
-// Button listeners
+// Navigation function
 const onNavClick = (direction) => {
-    if (
-        buttonAnimating ||
-        (direction < 0 && currentNav <= 0) ||
-        (direction > 0 && currentNav >= twoDimArray.length -1)
-    ) return
+  if (
+    isShelfTransitioning ||
+    (direction < 0 && currentNav <= 0) ||
+    (direction > 0 && currentNav >= bookShelves.length - 1)
+  )
+    return;
 
-    buttonAnimating = true
+  isShelfTransitioning = true;
 
-    // Reset all transformations on the current active book shelf
-    booksGroup.children[currentNav].children.forEach(book => {
-        if (book.isGroup) {
-            transitionColor(book.children[0], COLOR_AMERICANA, COLOR_DURATION)
-        }
-        gsap.to(book.rotation, { x: 0, duration: ANIMATION_DURATION })
-        gsap.to(book.position, { y: 0, z: 0, duration: ANIMATION_DURATION })
-    })
+  // Reset all transformations on the current active book shelf
+  booksGroup.children[currentNav].children.forEach((book) => {
+    if (book.isGroup) {
+      transitionColor(book.children[0], COLOR_AMERICANA, COLOR_DURATION);
+    }
+    gsap.to(book.rotation, { x: 0, duration: ANIMATION_DURATION });
+    gsap.to(book.position, { y: 0, z: 0, duration: ANIMATION_DURATION });
+  });
 
-    activeBook = null
-    currentNav += direction
+  activeBook = null;
+  currentNav += direction;
 
-    gsap.to(camera.position, { z: currentNav * -8 + 6, onComplete: () => { buttonAnimating = false }, ...animationProps })
+  gsap.to(camera.position, {
+    z: currentNav * -8 + 6,
+    onComplete: () => {
+      isShelfTransitioning = false;
+    },
+    ...animationProps,
+  });
+};
+
+// Previous shelf
+const prevBtn = document.querySelector(".nav-previous");
+prevBtn.addEventListener("click", () => {
+  onNavClick(-1);
+});
+
+// Next shelf
+const nextBtn = document.querySelector(".nav-next");
+nextBtn.addEventListener("click", () => {
+  onNavClick(1);
+});
+
+// Visit the selected book, this will trigger an animation and then redirect to the book page
+function onVisitClick() {
+  if (!activeBook || isShelfTransitioning || isPageTransitioning) return;
+
+  isPageTransitioning = true;
+
+  // Rotate book to correct position
+  transitionColor(activeBook.children[0], COLOR_AMERICANA, COLOR_DURATION); // Reset color state of active book
+
+  // Rotate the book
+  // Move camera in front of the book
+  gsap.to(activeBook.rotation, { x: 0, y: 0, duration: ANIMATION_DURATION });
+  gsap.to(activeBook.position, { y: 0, duration: ANIMATION_DURATION });
+  gsap.to(camera.position, {
+    x: camera.position.x - 3,
+    y: 1.5,
+    duration: ANIMATION_DURATION,
+  });
+  gsap.to(camera.rotation, { x: 0, y: 0, z: 0, duration: ANIMATION_DURATION });
+
+  // Only redirect on animation completion
+  const onComplete = () => {
+    window.location.href =
+      "https://americana.jcblibrary.org/search/object/jcbcap-991004232549706966/";
+  };
+
+  // Move camera 'into' the book
+  gsap.to(camera.position, {
+    z: camera.position.z - 4,
+    duration: ANIMATION_DURATION,
+    delay: ANIMATION_DURATION * 0.8,
+    onComplete,
+  });
+  gsap.to(activeBook.children[0].material, {
+    opacity: 0,
+    duration: ANIMATION_DURATION,
+    delay: ANIMATION_DURATION * 1.5,
+  });
+
+  // Fade away all other books
+  // Possible to optimize this by only fading away the books that are not in the current shelf
+  const fadeChildren = (object = scene, exceptionArray = []) => {
+    // Skip active book
+    if (object.uuid === activeBook.uuid) {
+      return;
+    }
+
+    // Found model group
+    if (object.userData.type !== "bookModel" && object.children.length) {
+      object.children.forEach((childObj) => {
+        fadeChildren(childObj);
+      });
+    }
+
+    // Look for model group
+    else if (object.isGroup) {
+      const mesh = object.children[0];
+
+      const deltaX = object.position.x - activeBook.position.x;
+      gsap.to(object.position, {
+        x: object.position.x + deltaX * 3,
+        duration: ANIMATION_DURATION,
+      });
+      gsap.to(mesh.material, {
+        opacity: 0,
+        duration: ANIMATION_DURATION,
+        delay: ANIMATION_DURATION * 0.4,
+      });
+    }
+  };
+
+  fadeChildren(scene);
 }
 
-const prevBtn = document.querySelector('.nav-previous')
-prevBtn.addEventListener('click', () => { onNavClick(-1) })
-
-const nextBtn = document.querySelector('.nav-next')
-nextBtn.addEventListener('click', () => { onNavClick(1) })
+// Add visit listener
+const visitBtn = document.querySelector(".visit-button");
+visitBtn.addEventListener("click", onVisitClick);

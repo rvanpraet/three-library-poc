@@ -20,7 +20,7 @@ body
 
 .content-container {
     background: linear-gradient(90deg, #FAF9F8, transparent 50%, transparent);
-    /* background: linear-gradient(45deg, black, transparent); */
+    /* background: linear-gradient(90deg, #1D0000, transparent 50%, transparent); */
     position: fixed;
     inset: 0;
     outline: none;
@@ -33,8 +33,18 @@ body
     position: fixed;
     bottom: 80px;
     left: 160px;
+
 }
 
-.nav-prev, .nav-next {
+.nav-previous, .nav-next {
+    padding: 4px 10px;
     cursor: pointer;
+}
+
+.visit-button {
+    z-index: 2;
+    position: fixed;
+    bottom: 80px;
+    right: 160px;
+    padding: 4px 10px;
 }
