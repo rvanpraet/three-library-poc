@@ -165,11 +165,7 @@ bookShelves.forEach((bookShelf, index) => {
       // Mouse out
       object.addEventListener("mouseout", (event) => {
         // Ignore mouseout if book is not in active shelf
-        if (
-          object.parent.userData.index !== currentNav ||
-          object === activeBook
-        )
-          return;
+        if (object.parent.userData.index !== currentNav || object === activeBook) return;
 
         document.body.style.cursor = "default";
 
@@ -185,11 +181,7 @@ bookShelves.forEach((bookShelf, index) => {
         // Reset previous active book if there is one
         if (activeBook) {
           // Rotation effect
-          transitionColor(
-            activeBook.children[0],
-            COLOR_AMERICANA,
-            COLOR_DURATION
-          );
+          transitionColor(activeBook.children[0], COLOR_AMERICANA, COLOR_DURATION);
           gsap.to(activeBook.rotation, { x: 0, duration: ANIMATION_DURATION });
           gsap.to(activeBook.position, {
             y: 0,
@@ -331,12 +323,7 @@ window.addEventListener("wheel", (event) => {
  * Camera
  */
 // Base camera
-const camera = new THREE.PerspectiveCamera(
-  60,
-  sizes.width / sizes.height,
-  0.1,
-  100
-);
+const camera = new THREE.PerspectiveCamera(60, sizes.width / sizes.height, 0.1, 100);
 const cameraTarget = new THREE.Object3D();
 camera.position.set(3, 4, 6);
 cameraTarget.position.set(0, 1, 0); // Heighten the look at position to avoid looking at the bottom of the books
@@ -357,11 +344,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 /**
  * Interaction Manager
  */
-const interactionManager = new InteractionManager(
-  renderer,
-  camera,
-  renderer.domElement
-);
+const interactionManager = new InteractionManager(renderer, camera, renderer.domElement);
 
 /**
  * Animate
@@ -456,8 +439,7 @@ function onVisitClick() {
 
   // Only redirect on animation completion
   const onComplete = () => {
-    window.location.href =
-      "https://americana.jcblibrary.org/search/object/jcbcap-991004232549706966/";
+    window.location.href = "https://americana.jcblibrary.org/search/object/jcbcap-991004232549706966/";
   };
 
   // Move camera 'into' the book
